@@ -1,10 +1,11 @@
 import json
 import glob
-import os, time
+import os
+import threading
 img_dir = "images/"
-buffer_size = 512
+buffer_size = 1024
 json_dir = "result.json"
-server_ip = '192.168.56.1'
+server_ip = 'localhost'
 server_port = 6969
 
 def createData ():
@@ -24,13 +25,15 @@ def getImagesDir (idx):
     images = glob.glob("images/"+str(idx)+"_*")
     return len(images), images
     
-def writeData (data, dir_to_file):
+def writedata (data, dir_to_file):
     with open(dir_to_file, 'w') as fp:
         json.dump(data, fp)
+
 def readData (dir_to_file):
     with open(dir_to_file, 'r') as fp:
         data = json.load(fp)
     return data
+
 #database = createData ()
 #writeData (database, json_dir)
 database = readData (json_dir)
@@ -48,16 +51,33 @@ def send_image(file_path, s, addr, buffer_size):
         if not data_string:
             break
         s.sendto(data_string, addr)
-        time.sleep (0.0001)
     img.close()
-    time.sleep (0.01)
-    s.sendto(str('Done').encode(),addr)
+    s.sendto(b'Done',addr)
     
 def send_all_img (idx, s, addr, buffer_size):
     for file in glob.glob(img_dir+str(idx)+"_*"):
         send_image (file, s, addr, buffer_size)
-    time.sleep (0.01)
-    s.sendto(b'Done',addr)        
+    s.sendto(b'Done',addr)      
+    
+def Process(data, addr):
+    data = data.decode()
+    
+    if (data.startswith('list')):
+        data_string = json.dumps(getList(database))
+        s.sendto(str.encode(data_string), addr)
+        
+    elif (data.startswith('detail')):
+        data_string = json.dumps(getDetail(database, int (data[6:len(data)])))
+        s.sendto(str.encode(data_string), addr)
+        
+    elif (data.startswith('thumbnail')):
+        threading._start_new_thread(send_image,(img_dir+data[9:len(data)] + ".jpg", s, addr, buffer_size))
+        
+    elif (data.startswith('allimg')):
+        threading._start_new_thread(send_all_img, (data[6:len(data)], s, addr, buffer_size))
+        
+    else:
+        s.sendto(data,addr)
 ################################
 #1) 'list'
 #2) 'detail2'
@@ -70,21 +90,7 @@ s.bind((server_ip, server_port))
 
 while True:
     data,addr = s.recvfrom(buffer_size)
-    data = data.decode()
-    print ("Received ",data," from: ",addr)
-    if (data.startswith('list')):
-        data_string = json.dumps(getList(database))
-        s.sendto(str.encode(data_string), addr)
-        
-    elif (data.startswith('detail')):
-        data_string = json.dumps(getDetail(database, int (data[6:len(data)])))
-        s.sendto(str.encode(data_string), addr)
-        
-    elif (data.startswith('thumbnail')):
-        send_image(img_dir+data[9:len(data)] + ".jpg", s, addr, buffer_size)
-        
-    elif (data.startswith('allimg')):
-        send_all_img (data[6:len(data)], s, addr, buffer_size)
-        
-    else:
-        s.sendto(data,addr)
+    threading._start_new_thread(Process,(data,addr))
+    #tmp = threading.Thread(target = Process, kwargs=(data,addr))
+    #tmp.start()
+    
